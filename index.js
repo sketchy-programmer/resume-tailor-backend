@@ -69,7 +69,10 @@ const openai = new OpenAI({
 ========================= */
 async function extractTextFromPDF(buffer) {
   const data = new Uint8Array(buffer);
-  const pdf = await pdfjsLib.getDocument({ data }).promise;
+  const pdf = await pdfjsLib.getDocument({
+    data,
+    disableWorker: true
+  }).promise;
 
   let text = "";
 
