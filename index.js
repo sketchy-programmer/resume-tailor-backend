@@ -4,7 +4,11 @@ import dotenv from "dotenv";
 import multer from "multer";
 import OpenAI from "openai";
 import mammoth from "mammoth";
-import * as pdfjsLib from "pdfjs-dist/legacy/build/pdf.mjs";
+import { createRequire } from "module";
+const require = createRequire(import.meta.url);
+
+const pdfjsLib = require("pdfjs-dist/legacy/build/pdf.cjs");
+
 
 
 dotenv.config();
@@ -70,6 +74,7 @@ const openai = new OpenAI({
 ========================= */
 async function extractTextFromPDF(buffer) {
   const data = new Uint8Array(buffer);
+
   const pdf = await pdfjsLib.getDocument({
     data,
     disableWorker: true
@@ -80,7 +85,7 @@ async function extractTextFromPDF(buffer) {
   for (let i = 1; i <= pdf.numPages; i++) {
     const page = await pdf.getPage(i);
     const content = await page.getTextContent();
-    text += content.items.map((item) => item.str).join(" ") + "\n";
+    text += content.items.map(item => item.str).join(" ") + "\n";
   }
 
   return text;
