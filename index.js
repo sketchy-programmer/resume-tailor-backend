@@ -6,6 +6,8 @@ import OpenAI from "openai";
 import mammoth from "mammoth";
 import * as pdfjsLib from "pdfjs-dist/legacy/build/pdf.mjs";
 
+pdfjsLib.GlobalWorkerOptions.workerSrc = null;
+
 dotenv.config();
 
 const app = express();
