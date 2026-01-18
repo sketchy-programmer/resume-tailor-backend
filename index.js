@@ -1,31 +1,50 @@
-import formidable from "formidable";
+import multer from "multer";
 import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
 import OpenAI from "openai";
 import * as pdfjsLib from "pdfjs-dist/legacy/build/pdf.mjs";
+import os from "os";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// Use /tmp directory for serverless environment
+const uploadsDir = path.join(os.tmpdir(), "uploads");
+
+// Ensure uploads directory exists
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir, { recursive: true });
+}
+
+// Multer configuration
+const storage = multer.diskStorage({
+  destination: (_, __, cb) => cb(null, uploadsDir),
+  filename: (_, file, cb) => cb(null, `${Date.now()}-${file.originalname}`)
+});
+
+const upload = multer({
+  storage,
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit
+  fileFilter: (_, file, cb) => {
+    const allowedTypes = [".pdf", ".doc", ".docx", ".txt"];
+    const ext = path.extname(file.originalname).toLowerCase();
+    allowedTypes.includes(ext)
+      ? cb(null, true)
+      : cb(new Error("Invalid file type. Only PDF, DOC, DOCX, and TXT allowed."));
+  }
+});
 
 // OpenAI client
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY
 });
 
-// Parse form data using formidable
-const parseForm = (req) => {
-  return new Promise((resolve, reject) => {
-    const form = formidable({
-      maxFileSize: 10 * 1024 * 1024, // 10MB
-      keepExtensions: true,
-    });
+// Extract text from PDF
+async function extractTextFromFile(filePath) {
+  const data = new Uint8Array(fs.readFileSync(filePath));
+  const pdf = await pdfjsLib.getDocument({ data }).promise;
 
-    form.parse(req, (err, fields, files) => {
-      if (err) reject(err);
-      else resolve({ fields, files });
-    });
-  });
-};
-
-// Extract text from PDF buffer
-async function extractTextFromPDF(buffer) {
-  const pdf = await pdfjsLib.getDocument({ data: buffer }).promise;
   let text = "";
 
   for (let i = 1; i <= pdf.numPages; i++) {
@@ -37,60 +56,46 @@ async function extractTextFromPDF(buffer) {
   return text;
 }
 
-// Extract text from file
-async function extractTextFromFile(filePath) {
-  const buffer = fs.readFileSync(filePath);
-  const ext = filePath.toLowerCase();
-
-  if (ext.endsWith('.pdf')) {
-    return await extractTextFromPDF(buffer);
-  } else if (ext.endsWith('.txt')) {
-    return buffer.toString('utf-8');
-  } else if (ext.endsWith('.doc') || ext.endsWith('.docx')) {
-    // For DOC/DOCX, we'll just return an error for now
-    // You can add mammoth library if needed
-    throw new Error('DOC/DOCX files not supported yet. Please use PDF or TXT.');
-  }
-  
-  return buffer.toString('utf-8');
-}
+// Middleware wrapper for multer in serverless
+const runMiddleware = (req, res, fn) => {
+  return new Promise((resolve, reject) => {
+    fn(req, res, (result) => {
+      if (result instanceof Error) {
+        return reject(result);
+      }
+      return resolve(result);
+    });
+  });
+};
 
 export default async function handler(req, res) {
-  // Enable CORS
-  res.setHeader('Access-Control-Allow-Credentials', true);
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
-  res.setHeader(
-    'Access-Control-Allow-Headers',
-    'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version'
-  );
+  // Enhanced CORS headers
+  const origin = req.headers.origin || '*';
+  res.setHeader('Access-Control-Allow-Credentials', 'true');
+  res.setHeader('Access-Control-Allow-Origin', origin);
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version, Authorization');
+  res.setHeader('Access-Control-Max-Age', '86400'); // 24 hours
 
-  // Handle OPTIONS request
+  // Handle preflight OPTIONS request
   if (req.method === 'OPTIONS') {
     res.status(200).end();
     return;
   }
 
-  // Only allow POST
+  // Only allow POST for this endpoint
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  let filePath = null;
+  let resumeFile = null;
 
   try {
-    // Parse the form data
-    const { fields, files } = await parseForm(req);
+    // Run multer middleware
+    await runMiddleware(req, res, upload.single('resume'));
 
-    // Get job description from fields
-    const jobDescription = Array.isArray(fields.jobDescription) 
-      ? fields.jobDescription[0] 
-      : fields.jobDescription;
-
-    // Get resume file
-    const resumeFile = Array.isArray(files.resume) 
-      ? files.resume[0] 
-      : files.resume;
+    const { jobDescription } = req.body;
+    resumeFile = req.file;
 
     if (!resumeFile) {
       return res.status(400).json({ error: "Resume file is required" });
@@ -100,8 +105,7 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: "Job description is required" });
     }
 
-    filePath = resumeFile.filepath;
-    const resumeText = await extractTextFromFile(filePath);
+    const resumeText = await extractTextFromFile(resumeFile.path);
 
     const prompt = `
 You are a senior resume strategist and recruitment optimization expert.
@@ -185,8 +189,8 @@ FINAL OUTPUT REQUIREMENTS:
     const tailoredResume = response.choices[0].message.content;
 
     // Clean up uploaded file
-    if (filePath && fs.existsSync(filePath)) {
-      fs.unlinkSync(filePath);
+    if (fs.existsSync(resumeFile.path)) {
+      fs.unlinkSync(resumeFile.path);
     }
 
     res.status(200).json({
@@ -198,12 +202,8 @@ FINAL OUTPUT REQUIREMENTS:
     console.error("Error tailoring resume:", error);
 
     // Clean up uploaded file on error
-    if (filePath && fs.existsSync(filePath)) {
-      try {
-        fs.unlinkSync(filePath);
-      } catch (cleanupError) {
-        console.error("Error cleaning up file:", cleanupError);
-      }
+    if (resumeFile && fs.existsSync(resumeFile.path)) {
+      fs.unlinkSync(resumeFile.path);
     }
 
     res.status(500).json({
@@ -215,6 +215,6 @@ FINAL OUTPUT REQUIREMENTS:
 
 export const config = {
   api: {
-    bodyParser: false, // formidable handles body parsing
+    bodyParser: false, // Multer handles body parsing
   },
 };
