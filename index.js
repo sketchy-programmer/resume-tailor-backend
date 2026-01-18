@@ -6,7 +6,6 @@ import OpenAI from "openai";
 import mammoth from "mammoth";
 import * as pdfjsLib from "pdfjs-dist/legacy/build/pdf.mjs";
 
-pdfjsLib.GlobalWorkerOptions.workerSrc = null;
 
 dotenv.config();
 
@@ -18,7 +17,7 @@ const PORT = process.env.PORT || 3001;
 ========================= */
 const allowedOrigins = [
   "http://localhost:5173",
-  "http://localhost:3000",
+  "http://localhost:3001",
   "https://resume-tailor-frontend-dun.vercel.app",
 ];
 
