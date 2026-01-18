@@ -1,3 +1,4 @@
+
 {
     "version": 2,
     "builds": [
@@ -11,8 +12,5 @@
         "src": "/api/(.*)",
         "dest": "/api/$1"
       }
-    ],
-    "env": {
-      "OPENAI_API_KEY": "@openai_api_key"
-    }
+    ]
   }
