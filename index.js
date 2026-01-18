@@ -5,9 +5,7 @@ import multer from "multer";
 import OpenAI from "openai";
 import mammoth from "mammoth";
 import { createRequire } from "module";
-const require = createRequire(import.meta.url);
-
-const pdfjsLib = require("pdfjs-dist/legacy/build/pdf.cjs");
+import { PdfReader } from "pdfreader";
 
 
 
@@ -72,23 +70,21 @@ const openai = new OpenAI({
    PDF TEXT EXTRACTION
    (SERVERLESS SAFE)
 ========================= */
-async function extractTextFromPDF(buffer) {
-  const data = new Uint8Array(buffer);
+function extractTextFromPDF(buffer) {
+  return new Promise((resolve, reject) => {
+    let text = "";
 
-  const pdf = await pdfjsLib.getDocument({
-    data,
-    disableWorker: true
-  }).promise;
-
-  let text = "";
-
-  for (let i = 1; i <= pdf.numPages; i++) {
-    const page = await pdf.getPage(i);
-    const content = await page.getTextContent();
-    text += content.items.map(item => item.str).join(" ") + "\n";
-  }
-
-  return text;
+    new PdfReader().parseBuffer(buffer, (err, item) => {
+      if (err) {
+        reject(err);
+      } else if (!item) {
+        // end of file
+        resolve(text);
+      } else if (item.text) {
+        text += item.text + " ";
+      }
+    });
+  });
 }
 
 /* =========================
