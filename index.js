@@ -4,7 +4,10 @@ import dotenv from "dotenv";
 import multer from "multer";
 import OpenAI from "openai";
 import mammoth from "mammoth";
-import pdf from "pdf-parse";
+import { createRequire } from "module";
+const require = createRequire(import.meta.url);
+
+const pdfParse = require("pdf-parse");
 
 dotenv.config();
 
@@ -61,7 +64,7 @@ async function extractTextFromBuffer(buffer, filename) {
   
   try {
     if (ext === '.pdf') {
-      const data = await pdf(buffer);
+      const data = await pdfParse(buffer);
       return data.text;
     } else if (ext === '.docx' || ext === '.doc') {
       const result = await mammoth.extractRawText({ buffer });
