@@ -4,13 +4,13 @@
 export class DrawingEditor extends AnnotationEditor {
     static _currentDrawId: number;
     static _currentParent: null;
-    static #currentDraw: null;
-    static #currentDrawingAC: null;
-    static #currentDrawingOptions: null;
-    static #currentPointerId: number;
-    static #currentPointerType: null;
-    static #currentPointerIds: null;
-    static #currentMoveTimestamp: number;
+    static "__#26@#currentDraw": null;
+    static "__#26@#currentDrawingAC": null;
+    static "__#26@#currentDrawingOptions": null;
+    static "__#26@#currentPointerId": number;
+    static "__#26@#currentPointerType": null;
+    static "__#26@#currentPointerIds": null;
+    static "__#26@#currentMoveTimestamp": number;
     static _INNER_MARGIN: number;
     static _mergeSVGProperties(p1: any, p2: any): any;
     /**
@@ -32,6 +32,7 @@ export class DrawingEditor extends AnnotationEditor {
         INK_THICKNESS: number;
         INK_OPACITY: number;
         HIGHLIGHT_COLOR: number;
+        HIGHLIGHT_DEFAULT_COLOR: number;
         HIGHLIGHT_THICKNESS: number;
         HIGHLIGHT_FREE: number;
         HIGHLIGHT_SHOW_ALL: number;
@@ -75,9 +76,7 @@ export class DrawingEditor extends AnnotationEditor {
     /** @inheritdoc */
     static deserialize(data: any, parent: any, uiManager: any): Promise<AnnotationEditor | null>;
     constructor(params: any);
-    _colorPicker: null;
     _drawId: null;
-    _addOutlines(params: any): void;
     /** @inheritdoc */
     updateParams(type: any, value: any): void;
     /** @inheritdoc */
@@ -88,7 +87,7 @@ export class DrawingEditor extends AnnotationEditor {
      */
     _updateProperty(type: any, name: any, value: any): void;
     /** @inheritdoc */
-    _onTranslating(_x: any, _y: any): void;
+    _onTranslating(x: any, y: any): void;
     /** @inheritdoc */
     _onTranslated(): void;
     /** @inheritdoc */

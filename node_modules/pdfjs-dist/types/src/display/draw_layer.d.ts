@@ -4,9 +4,8 @@
  * be able to use mix-blend-mode for some of them.
  */
 export class DrawLayer {
-    static #id: number;
     static get _svgFactory(): any;
-    static #setBox(element: any, [x, y, width, height]: [any, any, any, any]): void;
+    static "__#32@#setBox"(element: any, [x, y, width, height]: [any, any, any, any]): void;
     constructor({ pageIndex }: {
         pageIndex: any;
     });
