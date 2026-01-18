@@ -1,18 +1,53 @@
+import express from "express";
+import cors from "cors";
+import dotenv from "dotenv";
 import multer from "multer";
-import fs from "fs";
 import path from "path";
+import fs from "fs";
 import { fileURLToPath } from "url";
 import OpenAI from "openai";
+import mammoth from "mammoth";
 import * as pdfjsLib from "pdfjs-dist/legacy/build/pdf.mjs";
-import os from "os";
+
+dotenv.config();
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Use /tmp directory for serverless environment
-const uploadsDir = path.join(os.tmpdir(), "uploads");
+const app = express();
+const PORT = process.env.PORT || 3001;
+
+// CORS Configuration - UPDATED
+const allowedOrigins = [
+  'http://localhost:5173',
+  'http://localhost:3000',
+  'https://resume-tailor-frontend-dun.vercel.app',
+  // Add any other frontend URLs you might use
+];
+
+app.use(cors({
+  origin: function (origin, callback) {
+    // Allow requests with no origin (like mobile apps or curl requests)
+    if (!origin) return callback(null, true);
+    
+    if (allowedOrigins.indexOf(origin) !== -1) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+}));
+
+// Handle preflight requests
+app.options('*', cors());
+
+app.use(express.json());
 
 // Ensure uploads directory exists
+const uploadsDir = path.join(__dirname, "uploads");
 if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir, { recursive: true });
 }
@@ -25,7 +60,6 @@ const storage = multer.diskStorage({
 
 const upload = multer({
   storage,
-  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit
   fileFilter: (_, file, cb) => {
     const allowedTypes = [".pdf", ".doc", ".docx", ".txt"];
     const ext = path.extname(file.originalname).toLowerCase();
@@ -56,62 +90,16 @@ async function extractTextFromFile(filePath) {
   return text;
 }
 
-// Middleware wrapper for multer in serverless
-const runMiddleware = (req, res, fn) => {
-  return new Promise((resolve, reject) => {
-    fn(req, res, (result) => {
-      if (result instanceof Error) {
-        return reject(result);
-      }
-      return resolve(result);
-    });
-  });
-};
+// Health check
+app.get("/api/health", (_, res) => {
+  res.json({ status: "ok", message: "Server is running" });
+});
 
-export default async function handler(req, res) {
-  // Enhanced CORS headers
-  const allowedOrigins = [
-    "http://localhost:5173",
-    "http://localhost:3000",
-    "https://resume-tailor-frontend-dun.vercel.app"
-  ];
-  
-  const origin = req.headers.origin;
-  
-  if (origin && allowedOrigins.includes(origin)) {
-    res.setHeader("Access-Control-Allow-Origin", origin);
-    res.setHeader("Access-Control-Allow-Credentials", "true");
-  }
-  
-  res.setHeader(
-    "Access-Control-Allow-Methods",
-    "GET, POST, PUT, DELETE, OPTIONS"
-  );
-  res.setHeader(
-    "Access-Control-Allow-Headers",
-    "Content-Type, Authorization"
-  );
-  
-
-  // Handle preflight OPTIONS request
-  if (req.method === 'OPTIONS') {
-    res.status(200).end();
-    return;
-  }
-
-  // Only allow POST for this endpoint
-  if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Method not allowed' });
-  }
-
-  let resumeFile = null;
-
+// Resume tailoring endpoint
+app.post("/api/tailor-resume", upload.single("resume"), async (req, res) => {
   try {
-    // Run multer middleware
-    await runMiddleware(req, res, upload.single('resume'));
-
     const { jobDescription } = req.body;
-    resumeFile = req.file;
+    const resumeFile = req.file;
 
     if (!resumeFile) {
       return res.status(400).json({ error: "Resume file is required" });
@@ -204,12 +192,9 @@ FINAL OUTPUT REQUIREMENTS:
 
     const tailoredResume = response.choices[0].message.content;
 
-    // Clean up uploaded file
-    if (fs.existsSync(resumeFile.path)) {
-      fs.unlinkSync(resumeFile.path);
-    }
+    fs.unlinkSync(resumeFile.path);
 
-    res.status(200).json({
+    res.json({
       success: true,
       tailoredResume
     });
@@ -217,9 +202,8 @@ FINAL OUTPUT REQUIREMENTS:
   } catch (error) {
     console.error("Error tailoring resume:", error);
 
-    // Clean up uploaded file on error
-    if (resumeFile && fs.existsSync(resumeFile.path)) {
-      fs.unlinkSync(resumeFile.path);
+    if (req.file && fs.existsSync(req.file.path)) {
+      fs.unlinkSync(req.file.path);
     }
 
     res.status(500).json({
@@ -227,10 +211,8 @@ FINAL OUTPUT REQUIREMENTS:
       message: error.message
     });
   }
-}
+});
 
-export const config = {
-  api: {
-    bodyParser: false, // Multer handles body parsing
-  },
-};
+app.listen(PORT, () => {
+  console.log(`Server is running on http://localhost:${PORT}`);
+});

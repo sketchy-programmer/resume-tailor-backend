@@ -1,9 +1,10 @@
-
 {
   "name": "resume-tailor-server",
   "version": "1.0.0",
   "type": "module",
   "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^5.2.1",
     "formidable": "^3.5.1",
     "openai": "^4.77.0",
     "pdfjs-dist": "^4.9.155"
