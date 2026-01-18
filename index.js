@@ -2,34 +2,25 @@ import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
 import multer from "multer";
-import path from "path";
-import fs from "fs";
-import { fileURLToPath } from "url";
 import OpenAI from "openai";
 import mammoth from "mammoth";
-import * as pdfjsLib from "pdfjs-dist/legacy/build/pdf.mjs";
+import pdf from "pdf-parse";
 
 dotenv.config();
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
 
 const app = express();
 const PORT = process.env.PORT || 3001;
 
-// CORS Configuration - UPDATED
+// CORS Configuration
 const allowedOrigins = [
   'http://localhost:5173',
   'http://localhost:3000',
   'https://resume-tailor-frontend-dun.vercel.app',
-  // Add any other frontend URLs you might use
 ];
 
 app.use(cors({
   origin: function (origin, callback) {
-    // Allow requests with no origin (like mobile apps or curl requests)
     if (!origin) return callback(null, true);
-    
     if (allowedOrigins.indexOf(origin) !== -1) {
       callback(null, true);
     } else {
@@ -41,28 +32,18 @@ app.use(cors({
   allowedHeaders: ['Content-Type', 'Authorization']
 }));
 
-// Handle preflight requests
 app.options('*', cors());
-
 app.use(express.json());
 
-// Ensure uploads directory exists
-const uploadsDir = path.join(__dirname, "uploads");
-if (!fs.existsSync(uploadsDir)) {
-  fs.mkdirSync(uploadsDir, { recursive: true });
-}
-
-// Multer configuration
-const storage = multer.diskStorage({
-  destination: (_, __, cb) => cb(null, uploadsDir),
-  filename: (_, file, cb) => cb(null, `${Date.now()}-${file.originalname}`)
-});
-
+// Multer configuration for memory storage (serverless-friendly)
 const upload = multer({
-  storage,
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 10 * 1024 * 1024, // 10MB limit
+  },
   fileFilter: (_, file, cb) => {
     const allowedTypes = [".pdf", ".doc", ".docx", ".txt"];
-    const ext = path.extname(file.originalname).toLowerCase();
+    const ext = file.originalname.toLowerCase().slice(file.originalname.lastIndexOf('.'));
     allowedTypes.includes(ext)
       ? cb(null, true)
       : cb(new Error("Invalid file type. Only PDF, DOC, DOCX, and TXT allowed."));
@@ -74,20 +55,26 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY
 });
 
-// Extract text from PDF
-async function extractTextFromFile(filePath) {
-  const data = new Uint8Array(fs.readFileSync(filePath));
-  const pdf = await pdfjsLib.getDocument({ data }).promise;
-
-  let text = "";
-
-  for (let i = 1; i <= pdf.numPages; i++) {
-    const page = await pdf.getPage(i);
-    const content = await page.getTextContent();
-    text += content.items.map(item => item.str).join(" ") + "\n";
+// Extract text from different file types
+async function extractTextFromBuffer(buffer, filename) {
+  const ext = filename.toLowerCase().slice(filename.lastIndexOf('.'));
+  
+  try {
+    if (ext === '.pdf') {
+      const data = await pdf(buffer);
+      return data.text;
+    } else if (ext === '.docx' || ext === '.doc') {
+      const result = await mammoth.extractRawText({ buffer });
+      return result.value;
+    } else if (ext === '.txt') {
+      return buffer.toString('utf-8');
+    } else {
+      throw new Error('Unsupported file type');
+    }
+  } catch (error) {
+    console.error('Error extracting text:', error);
+    throw new Error(`Failed to extract text from ${ext} file: ${error.message}`);
   }
-
-  return text;
 }
 
 // Health check
@@ -109,7 +96,12 @@ app.post("/api/tailor-resume", upload.single("resume"), async (req, res) => {
       return res.status(400).json({ error: "Job description is required" });
     }
 
-    const resumeText = await extractTextFromFile(resumeFile.path);
+    // Extract text from the file buffer
+    const resumeText = await extractTextFromBuffer(resumeFile.buffer, resumeFile.originalname);
+
+    if (!resumeText || resumeText.trim().length === 0) {
+      return res.status(400).json({ error: "Could not extract text from resume. Please ensure the file is not empty or corrupted." });
+    }
 
     const prompt = `
 You are a senior resume strategist and recruitment optimization expert.
@@ -192,8 +184,6 @@ FINAL OUTPUT REQUIREMENTS:
 
     const tailoredResume = response.choices[0].message.content;
 
-    fs.unlinkSync(resumeFile.path);
-
     res.json({
       success: true,
       tailoredResume
@@ -201,11 +191,6 @@ FINAL OUTPUT REQUIREMENTS:
 
   } catch (error) {
     console.error("Error tailoring resume:", error);
-
-    if (req.file && fs.existsSync(req.file.path)) {
-      fs.unlinkSync(req.file.path);
-    }
-
     res.status(500).json({
       error: "Failed to tailor resume",
       message: error.message
@@ -213,6 +198,4 @@ FINAL OUTPUT REQUIREMENTS:
   }
 });
 
-app.listen(PORT, () => {
-  console.log(`Server is running on http://localhost:${PORT}`);
-});
+export default app;
